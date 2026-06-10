@@ -1,7 +1,7 @@
 use serde_json::{Map, Value};
 use std::future::Future;
-use std::pin::Pin;
 use std::path::Path;
+use std::pin::Pin;
 use tokio::fs;
 
 // Async recursive helper to build the JSON tree structure
@@ -18,11 +18,17 @@ fn build_tree<'a>(
             // Extract the name of the file or folder
             if let Some(name) = entry_path.file_name().and_then(|n| n.to_str()) {
                 if entry_path.is_dir() {
+                    if name.contains("target") {
+                        continue;
+                    }
                     // It's a folder, so append a trailing slash to the key and recurse
                     let folder_key = format!("{}/", name);
                     let subtree = build_tree(&entry_path).await?;
                     map.insert(folder_key, subtree);
                 } else if entry_path.is_file() {
+                    if name.contains("crawl.json") {
+                        continue;
+                    }
                     // It's a file, try to read its contents as a String
                     if let Ok(content) = fs::read_to_string(&entry_path).await {
                         map.insert(name.to_string(), Value::String(content));
