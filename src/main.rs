@@ -26,12 +26,14 @@ fn build_tree<'a>(
                     let subtree = build_tree(&entry_path).await?;
                     map.insert(folder_key, subtree);
                 } else if entry_path.is_file() {
-                    if name.contains("crawl.json") || name.contains(".env") {
-                        continue;
-                    }
-                    // It's a file, try to read its contents as a String
-                    if let Ok(content) = fs::read_to_string(&entry_path).await {
-                        map.insert(name.to_string(), Value::String(content));
+                    match name {
+                        "crawl.json" => continue,
+                        ".env" => continue,
+                        _ => {
+                            if let Ok(content) = fs::read_to_string(&entry_path).await {
+                                map.insert(name.to_string(), Value::String(content));
+                            }
+                        }
                     }
                 }
             }
