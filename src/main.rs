@@ -26,7 +26,7 @@ fn build_tree<'a>(
                     let subtree = build_tree(&entry_path).await?;
                     map.insert(folder_key, subtree);
                 } else if entry_path.is_file() {
-                    if name.contains("crawl.json") {
+                    if name.contains("crawl.json") || name.contains(".env") {
                         continue;
                     }
                     // It's a file, try to read its contents as a String
