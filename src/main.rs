@@ -1,13 +1,15 @@
+use anyhow::Result;
 use serde_json::{Map, Value};
 use std::future::Future;
 use std::path::Path;
 use std::pin::Pin;
+use std::vec;
 use tokio::fs;
-
+type Erp<'a> = Pin<Box<dyn Future<Output = Result<Value>> + Send + 'a>>;
 // Async recursive helper to build the JSON tree structure
-fn build_tree<'a>(
-    path: &'a Path,
-) -> Pin<Box<dyn Future<Output = Result<Value, Box<dyn std::error::Error>>> + Send + 'a>> {
+
+fn build_tree<'a>(path: &'a Path) -> Erp<'a> {
+    let exempt: Vec<String> = vec![String::from("target"), String::from(".git")];
     Box::pin(async move {
         let mut map = Map::new();
         let mut entries = fs::read_dir(path).await?;
@@ -18,7 +20,7 @@ fn build_tree<'a>(
             // Extract the name of the file or folder
             if let Some(name) = entry_path.file_name().and_then(|n| n.to_str()) {
                 if entry_path.is_dir() {
-                    if name.contains("target") {
+                    if exempt.contains(&String::from(name)) {
                         continue;
                     }
                     // It's a folder, so append a trailing slash to the key and recurse
@@ -44,7 +46,7 @@ fn build_tree<'a>(
 }
 
 #[tokio::main]
-async fn main() -> Result<(), Box<dyn std::error::Error>> {
+async fn main() -> Result<()> {
     // Define the directory you want to crawl
     let target_dir = Path::new("."); // Change this to whatever directory you want to crawl
     println!("Crawling directory structure...");
