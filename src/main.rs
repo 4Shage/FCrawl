@@ -6,10 +6,42 @@ use std::pin::Pin;
 use std::vec;
 use tokio::fs;
 type Erp<'a> = Pin<Box<dyn Future<Output = Result<Value>> + Send + 'a>>;
-// Async recursive helper to build the JSON tree structure
 
-fn build_tree<'a>(path: &'a Path) -> Erp<'a> {
-    let exempt: Vec<String> = vec![String::from("target"), String::from(".git")];
+async fn read_gitignore<'a>(path: &'a Path) -> Vec<String> {
+    let mut results: Vec<String> = vec![];
+    match fs::try_exists(path.join(".gitignore")).await {
+        Ok(v) => {
+            if v {
+                println!(".gitignore exists!")
+            } else {
+                println!(".gitignore doesn't exist!");
+                return vec![];
+            }
+        }
+        Err(e) => {
+            println!(".gitignore doesn't exist! {}", e);
+            return vec![];
+        }
+    }
+    let gitignore = fs::read_to_string(path.join(".gitignore"))
+        .await
+        .expect("Couldn't read .gitignore");
+    for line in gitignore.split('\n') {
+        let a = line.replace('\r', "");
+        let line = a.as_str();
+        let ignored_path: &Path = &path.join(line);
+        if line.starts_with("/") {
+            let cleaned = line.replacen("/", "", 1);
+            results.push(String::from(cleaned));
+        }
+        if ignored_path.is_dir() {
+            results.push(String::from(line));
+        }
+    }
+    results
+}
+
+fn build_tree<'a>(path: &'a Path, exempt: Vec<String>) -> Erp<'a> {
     Box::pin(async move {
         let mut map = Map::new();
         let mut entries = fs::read_dir(path).await?;
@@ -17,15 +49,15 @@ fn build_tree<'a>(path: &'a Path) -> Erp<'a> {
         while let Some(entry) = entries.next_entry().await? {
             let entry_path = entry.path();
 
-            // Extract the name of the file or folder
             if let Some(name) = entry_path.file_name().and_then(|n| n.to_str()) {
                 if entry_path.is_dir() {
-                    if exempt.contains(&String::from(name)) {
+                    let nexempt = exempt.clone();
+
+                    if nexempt.contains(&String::from(name)) {
                         continue;
                     }
-                    // It's a folder, so append a trailing slash to the key and recurse
                     let folder_key = format!("{}/", name);
-                    let subtree = build_tree(&entry_path).await?;
+                    let subtree = build_tree(&entry_path, nexempt).await?;
                     map.insert(folder_key, subtree);
                 } else if entry_path.is_file() {
                     match name {
@@ -47,17 +79,15 @@ fn build_tree<'a>(path: &'a Path) -> Erp<'a> {
 
 #[tokio::main]
 async fn main() -> Result<()> {
-    // Define the directory you want to crawl
-    let target_dir = Path::new("."); // Change this to whatever directory you want to crawl
+    let target_dir = Path::new(".");
     println!("Crawling directory structure...");
+    let mut exempt: Vec<String> = vec![String::from(".git")];
+    let mut gitignore = read_gitignore(target_dir).await;
+    exempt.append(&mut gitignore);
+    let json_tree = build_tree(target_dir, exempt).await?;
 
-    // Build the JSON tree structure
-    let json_tree = build_tree(target_dir).await?;
-
-    // Pretty-print the JSON structure to a string
     let json_string = serde_json::to_string_pretty(&json_tree)?;
 
-    // Save the string to crawl.json
     fs::write("crawl.json", json_string).await?;
     println!("Successfully saved directory tree structure to crawl.json!");
 
